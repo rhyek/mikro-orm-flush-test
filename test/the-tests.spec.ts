@@ -124,7 +124,7 @@ describe('the tests', () => {
           em.persist(user);
         });
 
-        expect(afterCreateSpy).toHaveBeenCalledTimes(1); // not sure why afterCreat is called twice :/
+        expect(afterCreateSpy).toHaveBeenCalledTimes(1);
         expect(afterFlushSpy).toHaveBeenCalledTimes(1);
       });
       it('hooks not called when inserting a new user fails', async () => {
@@ -220,7 +220,7 @@ describe('the tests', () => {
           em.persist(user);
         });
 
-        expect(afterCreateSpy).toHaveBeenCalledTimes(1); // not sure why afterCreat is called twice :/
+        expect(afterCreateSpy).toHaveBeenCalledTimes(1);
         expect(afterFlushSpy).toHaveBeenCalledTimes(1);
       });
       it('hooks not called when inserting a new user fails', async () => {
