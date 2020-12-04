@@ -1,4 +1,3 @@
-import { SqlEntityRepository } from '@mikro-orm/postgresql';
 import {
   EntityManager,
   Entity,
@@ -7,10 +6,10 @@ import {
   Property,
   EventSubscriber,
 } from '@mikro-orm/core';
-import {
-  DockerComposeEnvironment,
-  StartedDockerComposeEnvironment,
-} from 'testcontainers';
+// import {
+//   DockerComposeEnvironment,
+//   StartedDockerComposeEnvironment,
+// } from 'testcontainers';
 import { v4 as uuid } from 'uuid';
 
 @Entity({ tableName: 'users' })
@@ -49,7 +48,7 @@ async function getOrm() {
 }
 
 describe('the tests', () => {
-  let environment: StartedDockerComposeEnvironment;
+  // let environment: StartedDockerComposeEnvironment;
   let orm: MikroORM;
   let em: EntityManager;
   let afterCreateSpy: jest.SpyInstance<Promise<void>>;
