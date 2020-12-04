@@ -1,0 +1,24 @@
+{
+  "name": "mikro-orm-flush-test",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --inspect -r ts-node/register node_modules/.bin/jest  --runInBand"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@mikro-orm/core": "^4.3.2",
+    "@mikro-orm/postgresql": "^4.3.2",
+    "@types/jest": "^26.0.16",
+    "@types/uuid": "^8.3.0",
+    "jest": "^26.6.3",
+    "testcontainers": "^6.3.0",
+    "ts-jest": "^26.4.4",
+    "ts-node": "^9.1.0",
+    "typescript": "^4.1.2",
+    "uuid": "^8.3.1"
+  }
+}
