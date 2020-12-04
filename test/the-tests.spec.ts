@@ -85,7 +85,7 @@ describe('the tests', () => {
           drop table if exists users;
           create table users (
             id serial primary key,
-            username varchar(50) not null constraint unique_username unique deferrable initially immediate
+            username varchar(50) not null unique deferrable initially immediate
           );
           `
       );
@@ -180,7 +180,7 @@ describe('the tests', () => {
         drop table if exists users;
         create table users (
           id serial primary key,
-          username varchar(50) not null constraint unique_username unique deferrable initially deferred
+          username varchar(50) not null unique deferrable initially deferred
         );
           `
       );
