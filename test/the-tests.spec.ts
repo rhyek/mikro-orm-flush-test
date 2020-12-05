@@ -1,3 +1,4 @@
+import path from 'path';
 import {
   EntityManager,
   Entity,
@@ -6,10 +7,10 @@ import {
   Property,
   EventSubscriber,
 } from '@mikro-orm/core';
-// import {
-//   DockerComposeEnvironment,
-//   StartedDockerComposeEnvironment,
-// } from 'testcontainers';
+import {
+  DockerComposeEnvironment,
+  StartedDockerComposeEnvironment,
+} from 'testcontainers';
 import { v4 as uuid } from 'uuid';
 
 @Entity({ tableName: 'users' })
@@ -48,21 +49,21 @@ async function getOrm() {
 }
 
 describe('the tests', () => {
-  // let environment: StartedDockerComposeEnvironment;
+  let environment: StartedDockerComposeEnvironment;
   let orm: MikroORM;
   let em: EntityManager;
   let afterCreateSpy: jest.SpyInstance<Promise<void>>;
   let afterFlushSpy: jest.SpyInstance<Promise<void>>;
 
   beforeAll(async () => {
-    // environment = await new DockerComposeEnvironment(
-    //   __dirname,
-    //   'docker-compose.yaml'
-    // ).up();
+    environment = await new DockerComposeEnvironment(
+      path.resolve(__dirname, '..'),
+      'docker-compose.yaml'
+    ).up();
   }, 600_000);
 
   afterAll(async () => {
-    // await environment.down();
+    await environment.down();
   });
 
   beforeEach(async () => {
