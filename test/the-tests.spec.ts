@@ -7,6 +7,7 @@ import {
   Property,
   EventSubscriber,
 } from '@mikro-orm/core';
+import { PostgreSqlDriver } from '@mikro-orm/postgresql';
 import {
   DockerComposeEnvironment,
   StartedDockerComposeEnvironment,
@@ -26,14 +27,9 @@ class User {
   }
 }
 
-class UserSubscriber implements EventSubscriber<User> {
-  async afterCreate() {}
-  async afterFlush() {}
-}
-
-async function getOrm() {
-  const userSubscriber = new UserSubscriber();
-
+async function getOrmInstance(
+  subscriber?: EventSubscriber
+): Promise<MikroORM<PostgreSqlDriver>> {
   const orm = await MikroORM.init({
     type: 'postgresql',
     user: 'postgres',
@@ -41,46 +37,48 @@ async function getOrm() {
     dbName: 'test_db',
     port: 15432,
     entities: [User],
-    subscribers: [userSubscriber],
-    // debug: true,
+    subscribers: subscriber ? [subscriber] : [],
   });
 
-  return { userSubscriber, orm };
+  return orm as MikroORM<PostgreSqlDriver>;
 }
 
 describe('the tests', () => {
   let environment: StartedDockerComposeEnvironment;
   let orm: MikroORM;
   let em: EntityManager;
-  let afterCreateSpy: jest.SpyInstance<Promise<void>>;
-  let afterFlushSpy: jest.SpyInstance<Promise<void>>;
+  const testSubscriber: EventSubscriber = {
+    afterCreate: async () => {},
+    afterFlush: async () => {},
+  };
+  const afterCreateSpy = jest.spyOn(testSubscriber, 'afterCreate');
+  const afterFlushSpy = jest.spyOn(testSubscriber, 'afterFlush');
 
   beforeAll(async () => {
     environment = await new DockerComposeEnvironment(
       path.resolve(__dirname, '..'),
       'docker-compose.yaml'
     ).up();
+    orm = await getOrmInstance(testSubscriber);
   }, 600_000);
 
   afterAll(async () => {
+    await orm.close();
     await environment.down();
   });
 
   beforeEach(async () => {
-    const { orm: _orm, userSubscriber } = await getOrm();
-    orm = _orm;
-    em = orm.em;
-    afterCreateSpy = jest.spyOn(userSubscriber, 'afterCreate');
-    afterFlushSpy = jest.spyOn(userSubscriber, 'afterFlush');
+    em = orm.em.fork();
   });
 
   afterEach(async () => {
-    await orm.close();
+    afterCreateSpy.mockClear();
+    afterFlushSpy.mockClear();
   });
 
   describe('immediate constraint (failures on insert)', () => {
     beforeAll(async () => {
-      const { orm } = await getOrm();
+      const orm = await getOrmInstance();
       await orm.em.getConnection().execute(
         `
           drop table if exists users;
@@ -103,14 +101,22 @@ describe('the tests', () => {
         expect(afterCreateSpy).toHaveBeenCalledTimes(1);
         expect(afterFlushSpy).toHaveBeenCalledTimes(1);
       });
-      it('hooks not called when inserting a new user fails', async () => {
+      it('afterCreate hook not called when inserting a new user fails', async () => {
         const user = new User(username);
         em.persist(user);
-        expect(() => em.flush()).rejects.toThrowError(
+        await expect(() => em.flush()).rejects.toThrowError(
           /^insert.+duplicate key value/
         );
 
         expect(afterCreateSpy).toHaveBeenCalledTimes(0);
+      });
+      it('afterFlush hook not called when inserting a new user fails', async () => {
+        const user = new User(username);
+        em.persist(user);
+        await expect(() => em.flush()).rejects.toThrowError(
+          /^insert.+duplicate key value/
+        );
+
         expect(afterFlushSpy).toHaveBeenCalledTimes(0);
       });
     });
@@ -127,7 +133,7 @@ describe('the tests', () => {
         expect(afterCreateSpy).toHaveBeenCalledTimes(1);
         expect(afterFlushSpy).toHaveBeenCalledTimes(1);
       });
-      it('hooks not called when inserting a new user fails', async () => {
+      it('afterCreate hook not called when inserting a new user fails', async () => {
         const work = async () => {
           await em.transactional(async (em) => {
             const user = new User(username);
@@ -135,8 +141,18 @@ describe('the tests', () => {
           });
         };
 
-        expect(work).rejects.toThrowError(/^insert.+duplicate key value/);
+        await expect(work).rejects.toThrowError(/^insert.+duplicate key value/);
         expect(afterCreateSpy).toHaveBeenCalledTimes(0);
+      });
+      it('afterFlush hook not called when inserting a new user fails', async () => {
+        const work = async () => {
+          await em.transactional(async (em) => {
+            const user = new User(username);
+            em.persist(user);
+          });
+        };
+
+        await expect(work).rejects.toThrowError(/^insert.+duplicate key value/);
         expect(afterFlushSpy).toHaveBeenCalledTimes(0);
       });
     });
@@ -153,7 +169,7 @@ describe('the tests', () => {
         expect(afterCreateSpy).toHaveBeenCalledTimes(1);
         expect(afterFlushSpy).toHaveBeenCalledTimes(1);
       });
-      it('hooks not called when inserting a new user fails', async () => {
+      it('afterCreate hook not called when inserting a new user fails', async () => {
         await em.begin();
         const work = async () => {
           try {
@@ -166,16 +182,31 @@ describe('the tests', () => {
           }
         };
 
-        expect(work).rejects.toThrowError(/^insert.+duplicate key value/);
+        await expect(work).rejects.toThrowError(/^insert.+duplicate key value/);
         expect(afterCreateSpy).toHaveBeenCalledTimes(0);
+      });
+      it('afterFlush hook not called when inserting a new user fails', async () => {
+        await em.begin();
+        const work = async () => {
+          try {
+            const user = new User(username);
+            em.persist(user);
+            await em.commit();
+          } catch (error) {
+            await em.rollback();
+            throw error;
+          }
+        };
+
+        await expect(work).rejects.toThrowError(/^insert.+duplicate key value/);
         expect(afterFlushSpy).toHaveBeenCalledTimes(0);
       });
     });
   });
 
-  describe('deferred constraint (failures on commit)', () => {
+  describe('deferred constraints (failures on commit)', () => {
     beforeAll(async () => {
-      const { orm } = await getOrm();
+      const orm = await getOrmInstance();
       await orm.em.getConnection().execute(
         `
         drop table if exists users;
@@ -199,14 +230,22 @@ describe('the tests', () => {
         expect(afterCreateSpy).toHaveBeenCalledTimes(1);
         expect(afterFlushSpy).toHaveBeenCalledTimes(1);
       });
-      it('hooks not called when inserting a new user fails', async () => {
+      it('afterCreate hook not called when inserting a new user fails', async () => {
         const user = new User(username);
         em.persist(user);
-        expect(() => em.flush()).rejects.toThrowError(
+        await expect(em.flush()).rejects.toThrowError(
           /^COMMIT.+duplicate key value/
         );
 
         expect(afterCreateSpy).toHaveBeenCalledTimes(0);
+      });
+      it('afterFlush hook not called when inserting a new user fails', async () => {
+        const user = new User(username);
+        em.persist(user);
+        await expect(em.flush()).rejects.toThrowError(
+          /^COMMIT.+duplicate key value/
+        );
+
         expect(afterFlushSpy).toHaveBeenCalledTimes(0);
       });
     });
@@ -223,7 +262,7 @@ describe('the tests', () => {
         expect(afterCreateSpy).toHaveBeenCalledTimes(1);
         expect(afterFlushSpy).toHaveBeenCalledTimes(1);
       });
-      it('hooks not called when inserting a new user fails', async () => {
+      it('afterCreate hook not called when inserting a new user fails', async () => {
         const work = async () => {
           await em.transactional(async (em) => {
             const user = new User(username);
@@ -231,8 +270,18 @@ describe('the tests', () => {
           });
         };
 
-        expect(work).rejects.toThrowError(/^COMMIT.+duplicate key value/);
+        await expect(work).rejects.toThrowError(/^COMMIT.+duplicate key value/);
         expect(afterCreateSpy).toHaveBeenCalledTimes(0);
+      });
+      it('afterFlush hook not called when inserting a new user fails', async () => {
+        const work = async () => {
+          await em.transactional(async (em) => {
+            const user = new User(username);
+            em.persist(user);
+          });
+        };
+
+        await expect(work).rejects.toThrowError(/^COMMIT.+duplicate key value/);
         expect(afterFlushSpy).toHaveBeenCalledTimes(0);
       });
     });
@@ -262,9 +311,9 @@ describe('the tests', () => {
           }
         };
 
-        expect(work).rejects.toThrowError(/^COMMIT.+duplicate key value/);
+        await expect(work).rejects.toThrowError(/^COMMIT.+duplicate key value/);
       });
-      it('hooks not called when inserting a new user fails', async () => {
+      it('afterCreate hook not called when inserting a new user fails', async () => {
         await em.begin();
         const work = async () => {
           try {
@@ -279,6 +328,21 @@ describe('the tests', () => {
 
         await work(); // should throw but doesn't as demonstrated in previous test case
         expect(afterCreateSpy).toHaveBeenCalledTimes(0);
+      });
+      it('afterFlush not called when inserting a new user fails', async () => {
+        await em.begin();
+        const work = async () => {
+          try {
+            const user = new User(username);
+            em.persist(user);
+            await em.commit();
+          } catch (error) {
+            await em.rollback();
+            throw error;
+          }
+        };
+
+        await work(); // should throw but doesn't as demonstrated in previous test case
         expect(afterFlushSpy).toHaveBeenCalledTimes(0);
       });
     });
