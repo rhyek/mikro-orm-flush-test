@@ -326,7 +326,7 @@ describe('the tests', () => {
           }
         };
 
-        await work(); // should throw but doesn't as demonstrated in previous test case
+        await expect(work).rejects.toThrowError(/^COMMIT.+duplicate key value/);
         expect(afterCreateSpy).toHaveBeenCalledTimes(0);
       });
       it('afterFlush not called when inserting a new user fails', async () => {
@@ -342,7 +342,7 @@ describe('the tests', () => {
           }
         };
 
-        await work(); // should throw but doesn't as demonstrated in previous test case
+        await expect(work).rejects.toThrowError(/^COMMIT.+duplicate key value/);
         expect(afterFlushSpy).toHaveBeenCalledTimes(0);
       });
     });
