@@ -12,6 +12,7 @@ import {
   DockerComposeEnvironment,
   StartedDockerComposeEnvironment,
 } from 'testcontainers';
+import Docker, { Container } from 'dockerode';
 import { v4 as uuid } from 'uuid';
 
 @Entity({ tableName: 'users' })
@@ -45,6 +46,7 @@ async function getOrmInstance(
 
 describe('the tests', () => {
   let environment: StartedDockerComposeEnvironment;
+  let dbContainer: Container;
   let orm: MikroORM;
   let em: EntityManager;
   const testSubscriber: EventSubscriber = {
@@ -54,11 +56,24 @@ describe('the tests', () => {
   const afterCreateSpy = jest.spyOn(testSubscriber, 'afterCreate');
   const afterFlushSpy = jest.spyOn(testSubscriber, 'afterFlush');
 
+  async function getLogs(lines: number) {
+    const buffer = ((await dbContainer.logs({
+      follow: false,
+      stdout: true,
+      stderr: true,
+      tail: lines,
+    })) as unknown) as Buffer;
+    const logs = buffer.toString();
+    return logs;
+  }
+
   beforeAll(async () => {
     environment = await new DockerComposeEnvironment(
       path.resolve(__dirname, '..'),
       'docker-compose.yaml'
     ).up();
+    const docker = new Docker();
+    dbContainer = docker.getContainer('mikro-orm-tx-tests-db');
     orm = await getOrmInstance(testSubscriber);
   }, 600_000);
 
@@ -119,6 +134,15 @@ describe('the tests', () => {
 
         expect(afterFlushSpy).toHaveBeenCalledTimes(0);
       });
+      it('automatic rollback sent on failure', async () => {
+        const user = new User(username);
+        em.persist(user);
+        await expect(() => em.flush()).rejects.toThrowError(
+          /^insert.+duplicate key value/
+        );
+        const logs = await getLogs(1);
+        expect(logs).toContain('ROLLBACK');
+      });
     });
 
     describe('explicit transactions with "transactional()"', () => {
@@ -154,6 +178,18 @@ describe('the tests', () => {
 
         await expect(work).rejects.toThrowError(/^insert.+duplicate key value/);
         expect(afterFlushSpy).toHaveBeenCalledTimes(0);
+      });
+      it('automatic rollback sent on failure', async () => {
+        const work = async () => {
+          await em.transactional(async (em) => {
+            const user = new User(username);
+            em.persist(user);
+          });
+        };
+
+        await expect(work).rejects.toThrowError(/^insert.+duplicate key value/);
+        const logs = await getLogs(1);
+        expect(logs).toContain('ROLLBACK');
       });
     });
 
@@ -200,6 +236,23 @@ describe('the tests', () => {
 
         await expect(work).rejects.toThrowError(/^insert.+duplicate key value/);
         expect(afterFlushSpy).toHaveBeenCalledTimes(0);
+      });
+      it('automatic rollback sent on failure', async () => {
+        await em.begin();
+        const work = async () => {
+          try {
+            const user = new User(username);
+            em.persist(user);
+            await em.commit();
+          } catch (error) {
+            await em.rollback();
+            throw error;
+          }
+        };
+
+        await expect(work).rejects.toThrowError(/^insert.+duplicate key value/);
+        const logs = await getLogs(1);
+        expect(logs).toContain('ROLLBACK');
       });
     });
   });
@@ -248,6 +301,16 @@ describe('the tests', () => {
 
         expect(afterFlushSpy).toHaveBeenCalledTimes(0);
       });
+      it('automatic rollback sent on failure', async () => {
+        const user = new User(username);
+        em.persist(user);
+
+        await expect(em.flush()).rejects.toThrowError(
+          /^COMMIT.+duplicate key value/
+        );
+        const logs = await getLogs(1);
+        expect(logs).toContain('ROLLBACK');
+      });
     });
 
     describe('explicit transactions with "transactional()"', () => {
@@ -283,6 +346,18 @@ describe('the tests', () => {
 
         await expect(work).rejects.toThrowError(/^COMMIT.+duplicate key value/);
         expect(afterFlushSpy).toHaveBeenCalledTimes(0);
+      });
+      it('automatic rollback sent on failure', async () => {
+        const work = async () => {
+          await em.transactional(async (em) => {
+            const user = new User(username);
+            em.persist(user);
+          });
+        };
+
+        await expect(work).rejects.toThrowError(/^COMMIT.+duplicate key value/);
+        const logs = await getLogs(1);
+        expect(logs).toContain('ROLLBACK');
       });
     });
 
@@ -344,6 +419,23 @@ describe('the tests', () => {
 
         await expect(work).rejects.toThrowError(/^COMMIT.+duplicate key value/);
         expect(afterFlushSpy).toHaveBeenCalledTimes(0);
+      });
+      it('automatic rollback sent on failure', async () => {
+        await em.begin();
+        const work = async () => {
+          try {
+            const user = new User(username);
+            em.persist(user);
+            await em.commit();
+          } catch (error) {
+            await em.rollback();
+            throw error;
+          }
+        };
+
+        await expect(work).rejects.toThrowError(/^COMMIT.+duplicate key value/);
+        const logs = await getLogs(1);
+        expect(logs).toContain('ROLLBACK');
       });
     });
   });
